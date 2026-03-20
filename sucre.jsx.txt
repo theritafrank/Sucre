@@ -1,0 +1,619 @@
+import { useState, useEffect, useRef } from "react";
+
+const SECTIONS = ["Daily", "Spice", "Journal", "Ask"];
+
+const CLAUDE_API = "https://api.anthropic.com/v1/messages";
+
+async function callClaude(systemPrompt, userMessage) {
+  const res = await fetch(CLAUDE_API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMessage }],
+    }),
+  });
+  const data = await res.json();
+  return data.content?.[0]?.text || "";
+}
+
+const DAILY_SYSTEM = `You are Sucre — a warm, wise, and sophisticated relationship coach for married women who want to keep their husbands deeply in love and obsessed with them. 
+
+Generate exactly 5 daily action tips. These should be practical, sensual, emotionally intelligent, and immediately actionable TODAY. Cover a mix of: physical/intimacy, flirtation, emotional connection, self-possession/confidence, and one wildcard surprise tip.
+
+Format your response as a JSON array of exactly 5 objects, each with:
+- "category": one of ["Intimacy", "Flirtation", "Emotional", "Confidence", "Surprise"]
+- "tip": the action tip (1-2 sentences, specific and doable today)
+- "emoji": one relevant emoji
+
+Respond ONLY with the JSON array, no markdown, no explanation.`;
+
+const SPICE_SYSTEM = `You are Sucre — a sophisticated, daring relationship advisor for married women. 
+
+Generate 4 creative ideas to spice things up in the marriage. These should range from playful to bold — think: surprise dates, bedroom adventures, flirty games, romantic gestures, sensual experiences. Be specific, creative, and exciting — not generic.
+
+Format as a JSON array of 4 objects:
+- "title": short catchy name (3-5 words)
+- "description": what to do (2-3 sentences, vivid and enticing)
+- "intensity": one of ["Playful", "Bold", "Daring", "Intimate"]
+- "emoji": one relevant emoji
+
+Respond ONLY with the JSON array, no markdown, no explanation.`;
+
+const ASK_SYSTEM = `You are Sucre — a warm, wise, and sophisticated relationship advisor. You help married women keep their husbands deeply attracted, emotionally bonded, and obsessed with them. You give direct, practical, emotionally intelligent advice without judgment. You are warm but confident, and never preachy. Keep answers to 3-5 sentences max — sharp and useful.`;
+
+const JOURNAL_PROMPTS = [
+  "What made your husband smile at you today — and how did it make you feel?",
+  "Describe one moment this week where you felt most like yourself. How can you bring more of that?",
+  "What's one thing you've been holding back — from him, or from yourself?",
+  "If your most confident, magnetic self wrote a letter to you right now, what would she say?",
+  "What do you want your marriage to feel like one year from now? Be specific.",
+  "When did you last feel truly desired? What created that moment?",
+  "What's one small thing you could do tomorrow that would surprise him?",
+];
+
+const categoryColors = {
+  Intimacy: "#c9a96e",
+  Flirtation: "#d4687a",
+  Emotional: "#8b7bb5",
+  Confidence: "#5a9a8a",
+  Surprise: "#c96e8f",
+  Playful: "#8bc4b5",
+  Bold: "#c9a96e",
+  Daring: "#d4687a",
+  Intimate: "#8b7bb5",
+};
+
+export default function Sucre() {
+  const [active, setActive] = useState("Daily");
+  const [dailyTips, setDailyTips] = useState(null);
+  const [loadingDaily, setLoadingDaily] = useState(false);
+  const [spiceIdeas, setSpiceIdeas] = useState(null);
+  const [loadingSpice, setLoadingSpice] = useState(false);
+  const [journalText, setJournalText] = useState("");
+  const [journalPrompt, setJournalPrompt] = useState(JOURNAL_PROMPTS[0]);
+  const [journalEntries, setJournalEntries] = useState([]);
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [loadingAnswer, setLoadingAnswer] = useState(false);
+  const [checkedTips, setCheckedTips] = useState({});
+  const [completedTips, setCompletedTips] = useState(0);
+  const [todayDate] = useState(new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }));
+  const questionRef = useRef(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("sucre_journal");
+    if (saved) setJournalEntries(JSON.parse(saved));
+    const prompt = JOURNAL_PROMPTS[Math.floor(Math.random() * JOURNAL_PROMPTS.length)];
+    setJournalPrompt(prompt);
+  }, []);
+
+  useEffect(() => {
+    setCompletedTips(Object.values(checkedTips).filter(Boolean).length);
+  }, [checkedTips]);
+
+  const fetchDailyTips = async () => {
+    setLoadingDaily(true);
+    try {
+      const raw = await callClaude(DAILY_SYSTEM, "Give me today's 5 tips.");
+      const tips = JSON.parse(raw);
+      setDailyTips(tips);
+      setCheckedTips({});
+    } catch (e) {
+      setDailyTips([
+        { category: "Flirtation", tip: "Send him one text that has nothing to do with logistics — just a thought, a memory, or something that made you think of him.", emoji: "💌" },
+        { category: "Intimacy", tip: "Tonight, initiate physical closeness first. Touch his arm, his back — let him feel chosen.", emoji: "🔥" },
+        { category: "Confidence", tip: "Wear something today that makes you feel like the most beautiful version of yourself, even if you're staying in.", emoji: "✨" },
+        { category: "Emotional", tip: "Ask him one real question about something he cares about — and listen without redirecting to yourself.", emoji: "💬" },
+        { category: "Surprise", tip: "Leave a handwritten note somewhere he'll find it unexpectedly.", emoji: "🌹" },
+      ]);
+    }
+    setLoadingDaily(false);
+  };
+
+  const fetchSpiceIdeas = async () => {
+    setLoadingSpice(true);
+    try {
+      const raw = await callClaude(SPICE_SYSTEM, "Give me 4 spicy ideas for this week.");
+      const ideas = JSON.parse(raw);
+      setSpiceIdeas(ideas);
+    } catch (e) {
+      setSpiceIdeas([
+        { title: "The Blind Taste Game", description: "Blindfold him and feed him different foods, letting touch and taste become surprisingly intimate. Let the game evolve wherever it leads.", intensity: "Playful", emoji: "🍓" },
+        { title: "Dress Code: Just for Him", description: "One evening this week, get dressed specifically to his taste — his favorite color, the dress he loves. Make it theatrical. Tell him it's for him.", intensity: "Intimate", emoji: "👗" },
+        { title: "Mystery Date", description: "Plan a date entirely in secret. Tell him only what to wear and when to be ready. The mystery alone will intrigue him.", intensity: "Bold", emoji: "🌙" },
+        { title: "The Love Letter Drop", description: "Write him a letter — long, honest, and vivid — about exactly what you love about him physically and emotionally. Leave it on his pillow.", intensity: "Intimate", emoji: "💌" },
+      ]);
+    }
+    setLoadingSpice(false);
+  };
+
+  const handleAsk = async () => {
+    if (!question.trim()) return;
+    setLoadingAnswer(true);
+    setAnswer("");
+    try {
+      const ans = await callClaude(ASK_SYSTEM, question);
+      setAnswer(ans);
+    } catch (e) {
+      setAnswer("Let me reflect on that for a moment. The most magnetic thing you can do right now is trust your instincts — you know your husband better than any advisor. Lead with warmth, self-assurance, and genuine curiosity about him.");
+    }
+    setLoadingAnswer(false);
+  };
+
+  const saveJournalEntry = () => {
+    if (!journalText.trim()) return;
+    const entry = {
+      id: Date.now(),
+      prompt: journalPrompt,
+      text: journalText,
+      date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+    };
+    const updated = [entry, ...journalEntries].slice(0, 20);
+    setJournalEntries(updated);
+    localStorage.setItem("sucre_journal", JSON.stringify(updated));
+    setJournalText("");
+    const next = JOURNAL_PROMPTS[Math.floor(Math.random() * JOURNAL_PROMPTS.length)];
+    setJournalPrompt(next);
+  };
+
+  const toggleTip = (i) => {
+    setCheckedTips((prev) => ({ ...prev, [i]: !prev[i] }));
+  };
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      background: "linear-gradient(135deg, #1a0a0f 0%, #2d1520 40%, #1a0f1a 100%)",
+      fontFamily: "'Georgia', 'Times New Roman', serif",
+      color: "#f5e6d8",
+      position: "relative",
+      overflow: "hidden",
+    }}>
+      {/* Background texture */}
+      <div style={{
+        position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0,
+        background: "radial-gradient(ellipse at 20% 20%, rgba(201,169,110,0.08) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(212,104,122,0.08) 0%, transparent 60%)",
+      }} />
+
+      {/* Header */}
+      <header style={{
+        position: "relative", zIndex: 10,
+        textAlign: "center",
+        padding: "48px 24px 24px",
+        borderBottom: "1px solid rgba(201,169,110,0.2)",
+      }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.4em", color: "#c9a96e", marginBottom: 8, textTransform: "uppercase" }}>
+          ✦ Your Daily Ritual ✦
+        </div>
+        <h1 style={{
+          fontSize: "clamp(48px, 8vw, 72px)",
+          fontWeight: 400,
+          letterSpacing: "0.12em",
+          margin: 0,
+          background: "linear-gradient(135deg, #f5e6d8 0%, #c9a96e 50%, #f5e6d8 100%)",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          fontStyle: "italic",
+        }}>Sucre</h1>
+        <p style={{ fontSize: 13, color: "rgba(245,230,216,0.5)", letterSpacing: "0.2em", margin: "8px 0 0", textTransform: "uppercase" }}>
+          The art of being unforgettable
+        </p>
+        <div style={{ fontSize: 12, color: "rgba(201,169,110,0.6)", marginTop: 12, letterSpacing: "0.1em" }}>
+          {todayDate}
+        </div>
+      </header>
+
+      {/* Nav */}
+      <nav style={{
+        display: "flex", justifyContent: "center", gap: 4,
+        padding: "20px 24px",
+        position: "relative", zIndex: 10,
+      }}>
+        {SECTIONS.map((s) => (
+          <button
+            key={s}
+            onClick={() => setActive(s)}
+            style={{
+              padding: "10px 20px",
+              border: active === s ? "1px solid #c9a96e" : "1px solid rgba(201,169,110,0.25)",
+              borderRadius: 2,
+              background: active === s ? "rgba(201,169,110,0.15)" : "transparent",
+              color: active === s ? "#c9a96e" : "rgba(245,230,216,0.5)",
+              fontSize: 12,
+              letterSpacing: "0.2em",
+              textTransform: "uppercase",
+              cursor: "pointer",
+              transition: "all 0.3s ease",
+            }}
+          >{s}</button>
+        ))}
+      </nav>
+
+      {/* Content */}
+      <main style={{ maxWidth: 680, margin: "0 auto", padding: "8px 24px 80px", position: "relative", zIndex: 10 }}>
+
+        {/* DAILY */}
+        {active === "Daily" && (
+          <div>
+            <div style={{ textAlign: "center", marginBottom: 32 }}>
+              <p style={{ color: "rgba(245,230,216,0.6)", fontSize: 14, lineHeight: 1.7, marginBottom: 24 }}>
+                Five intentional acts that keep the spark alive — yours for today.
+              </p>
+              {dailyTips && (
+                <div style={{
+                  display: "inline-block", padding: "6px 16px",
+                  border: "1px solid rgba(201,169,110,0.3)",
+                  borderRadius: 20, fontSize: 12, color: "#c9a96e",
+                  marginBottom: 16, letterSpacing: "0.1em",
+                }}>
+                  {completedTips}/5 completed
+                </div>
+              )}
+            </div>
+
+            {!dailyTips && (
+              <div style={{ textAlign: "center", marginTop: 40 }}>
+                <div style={{
+                  width: 80, height: 80, borderRadius: "50%",
+                  border: "1px solid rgba(201,169,110,0.4)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  margin: "0 auto 24px", fontSize: 32,
+                }}>🌹</div>
+                <button onClick={fetchDailyTips} style={primaryBtn}>
+                  {loadingDaily ? "Preparing your ritual…" : "Begin Today's Practice"}
+                </button>
+              </div>
+            )}
+
+            {loadingDaily && (
+              <div style={{ textAlign: "center", padding: 60 }}>
+                <div style={{ fontSize: 24, marginBottom: 16, animation: "pulse 1.5s ease-in-out infinite" }}>✦</div>
+                <p style={{ color: "rgba(245,230,216,0.5)", fontSize: 13, letterSpacing: "0.15em" }}>Curating your day…</p>
+              </div>
+            )}
+
+            {dailyTips && !loadingDaily && (
+              <div>
+                {dailyTips.map((tip, i) => (
+                  <div
+                    key={i}
+                    onClick={() => toggleTip(i)}
+                    style={{
+                      display: "flex", alignItems: "flex-start", gap: 16,
+                      padding: "20px 24px",
+                      marginBottom: 12,
+                      border: `1px solid ${checkedTips[i] ? categoryColors[tip.category] : "rgba(245,230,216,0.1)"}`,
+                      borderRadius: 4,
+                      background: checkedTips[i] ? `rgba(${hexToRgb(categoryColors[tip.category])}, 0.08)` : "rgba(255,255,255,0.03)",
+                      cursor: "pointer",
+                      transition: "all 0.3s ease",
+                      opacity: checkedTips[i] ? 0.7 : 1,
+                    }}
+                  >
+                    <div style={{
+                      width: 28, height: 28, borderRadius: "50%",
+                      border: `1px solid ${categoryColors[tip.category]}`,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 12, flexShrink: 0, marginTop: 2,
+                      background: checkedTips[i] ? categoryColors[tip.category] : "transparent",
+                      color: checkedTips[i] ? "#1a0a0f" : categoryColors[tip.category],
+                      transition: "all 0.3s ease",
+                    }}>
+                      {checkedTips[i] ? "✓" : tip.emoji}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{
+                        fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase",
+                        color: categoryColors[tip.category], marginBottom: 6,
+                      }}>{tip.category}</div>
+                      <p style={{
+                        margin: 0, fontSize: 15, lineHeight: 1.7,
+                        color: checkedTips[i] ? "rgba(245,230,216,0.5)" : "rgba(245,230,216,0.9)",
+                        textDecoration: checkedTips[i] ? "line-through" : "none",
+                        transition: "all 0.3s ease",
+                      }}>{tip.tip}</p>
+                    </div>
+                  </div>
+                ))}
+                <div style={{ textAlign: "center", marginTop: 32 }}>
+                  <button onClick={fetchDailyTips} style={ghostBtn}>Refresh Today's Tips</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* SPICE */}
+        {active === "Spice" && (
+          <div>
+            <div style={{ textAlign: "center", marginBottom: 32 }}>
+              <p style={{ color: "rgba(245,230,216,0.6)", fontSize: 14, lineHeight: 1.7, marginBottom: 24 }}>
+                Curated experiences to ignite excitement, desire, and wonder.
+              </p>
+            </div>
+
+            {!spiceIdeas && (
+              <div style={{ textAlign: "center", marginTop: 40 }}>
+                <div style={{
+                  width: 80, height: 80, borderRadius: "50%",
+                  border: "1px solid rgba(212,104,122,0.4)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  margin: "0 auto 24px", fontSize: 32,
+                }}>🔥</div>
+                <button onClick={fetchSpiceIdeas} style={{ ...primaryBtn, background: "linear-gradient(135deg, rgba(212,104,122,0.2), rgba(201,169,110,0.2))", borderColor: "#d4687a", color: "#d4687a" }}>
+                  {loadingSpice ? "Crafting your ideas…" : "Ignite This Week"}
+                </button>
+              </div>
+            )}
+
+            {loadingSpice && (
+              <div style={{ textAlign: "center", padding: 60 }}>
+                <div style={{ fontSize: 24, marginBottom: 16 }}>✦</div>
+                <p style={{ color: "rgba(245,230,216,0.5)", fontSize: 13, letterSpacing: "0.15em" }}>Lighting the match…</p>
+              </div>
+            )}
+
+            {spiceIdeas && !loadingSpice && (
+              <div>
+                <div style={{ display: "grid", gap: 16 }}>
+                  {spiceIdeas.map((idea, i) => (
+                    <div key={i} style={{
+                      padding: "28px",
+                      border: "1px solid rgba(212,104,122,0.2)",
+                      borderRadius: 4,
+                      background: "rgba(255,255,255,0.03)",
+                      position: "relative", overflow: "hidden",
+                    }}>
+                      <div style={{
+                        position: "absolute", top: 0, right: 0,
+                        width: 80, height: 80,
+                        background: `radial-gradient(circle, ${categoryColors[idea.intensity]}22 0%, transparent 70%)`,
+                      }} />
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                        <span style={{ fontSize: 24 }}>{idea.emoji}</span>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: 16, fontStyle: "italic", color: "#f5e6d8" }}>{idea.title}</h3>
+                          <span style={{
+                            fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase",
+                            color: categoryColors[idea.intensity],
+                          }}>{idea.intensity}</span>
+                        </div>
+                      </div>
+                      <p style={{ margin: 0, fontSize: 14, lineHeight: 1.8, color: "rgba(245,230,216,0.75)" }}>
+                        {idea.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ textAlign: "center", marginTop: 32 }}>
+                  <button onClick={fetchSpiceIdeas} style={ghostBtn}>New Ideas</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* JOURNAL */}
+        {active === "Journal" && (
+          <div>
+            <div style={{ textAlign: "center", marginBottom: 32 }}>
+              <p style={{ color: "rgba(245,230,216,0.6)", fontSize: 14, lineHeight: 1.7 }}>
+                A private space for your thoughts, reflections, and becoming.
+              </p>
+            </div>
+
+            <div style={{
+              padding: "24px",
+              border: "1px solid rgba(201,169,110,0.25)",
+              borderRadius: 4,
+              background: "rgba(255,255,255,0.03)",
+              marginBottom: 24,
+            }}>
+              <div style={{ fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase", color: "#c9a96e", marginBottom: 16 }}>
+                Today's Prompt
+              </div>
+              <p style={{ margin: "0 0 20px", fontSize: 16, lineHeight: 1.8, fontStyle: "italic", color: "#f5e6d8" }}>
+                "{journalPrompt}"
+              </p>
+              <textarea
+                value={journalText}
+                onChange={(e) => setJournalText(e.target.value)}
+                placeholder="Write freely. This is yours alone…"
+                style={{
+                  width: "100%", minHeight: 160, background: "transparent",
+                  border: "none", borderTop: "1px solid rgba(201,169,110,0.2)",
+                  color: "#f5e6d8", fontSize: 15, lineHeight: 1.8,
+                  resize: "vertical", outline: "none", padding: "16px 0 0",
+                  fontFamily: "Georgia, serif",
+                  boxSizing: "border-box",
+                }}
+              />
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+                <button onClick={saveJournalEntry} style={primaryBtn} disabled={!journalText.trim()}>
+                  Save Entry
+                </button>
+              </div>
+            </div>
+
+            {journalEntries.length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(201,169,110,0.6)", marginBottom: 16 }}>
+                  Past Entries
+                </div>
+                {journalEntries.map((entry) => (
+                  <div key={entry.id} style={{
+                    padding: "20px",
+                    border: "1px solid rgba(245,230,216,0.08)",
+                    borderRadius: 4,
+                    background: "rgba(255,255,255,0.02)",
+                    marginBottom: 12,
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={{ fontSize: 11, color: "rgba(201,169,110,0.6)", letterSpacing: "0.1em" }}>{entry.date}</span>
+                    </div>
+                    <p style={{ margin: "0 0 10px", fontSize: 12, fontStyle: "italic", color: "rgba(245,230,216,0.4)" }}>
+                      "{entry.prompt}"
+                    </p>
+                    <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7, color: "rgba(245,230,216,0.7)" }}>
+                      {entry.text.length > 200 ? entry.text.slice(0, 200) + "…" : entry.text}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ASK */}
+        {active === "Ask" && (
+          <div>
+            <div style={{ textAlign: "center", marginBottom: 32 }}>
+              <p style={{ color: "rgba(245,230,216,0.6)", fontSize: 14, lineHeight: 1.7 }}>
+                Ask anything. About him, about you, about the marriage you're building.
+              </p>
+            </div>
+
+            <div style={{
+              padding: "24px",
+              border: "1px solid rgba(201,169,110,0.25)",
+              borderRadius: 4,
+              background: "rgba(255,255,255,0.03)",
+              marginBottom: 24,
+            }}>
+              <div style={{ fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase", color: "#c9a96e", marginBottom: 16 }}>
+                Your Question
+              </div>
+              <textarea
+                ref={questionRef}
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="What's on your mind? Ask freely…"
+                style={{
+                  width: "100%", minHeight: 100, background: "transparent",
+                  border: "none", borderBottom: "1px solid rgba(201,169,110,0.2)",
+                  color: "#f5e6d8", fontSize: 15, lineHeight: 1.8,
+                  resize: "none", outline: "none", padding: "0 0 16px",
+                  fontFamily: "Georgia, serif",
+                  boxSizing: "border-box",
+                }}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAsk(); } }}
+              />
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+                <button onClick={handleAsk} style={primaryBtn} disabled={loadingAnswer || !question.trim()}>
+                  {loadingAnswer ? "Thinking…" : "Ask Sucre"}
+                </button>
+              </div>
+            </div>
+
+            {loadingAnswer && (
+              <div style={{ textAlign: "center", padding: 40 }}>
+                <div style={{ fontSize: 24, marginBottom: 12 }}>✦</div>
+                <p style={{ color: "rgba(245,230,216,0.5)", fontSize: 13, letterSpacing: "0.1em" }}>Reflecting…</p>
+              </div>
+            )}
+
+            {answer && !loadingAnswer && (
+              <div style={{
+                padding: "28px",
+                border: "1px solid rgba(201,169,110,0.3)",
+                borderRadius: 4,
+                background: "rgba(201,169,110,0.05)",
+                position: "relative",
+              }}>
+                <div style={{ fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase", color: "#c9a96e", marginBottom: 16 }}>
+                  Sucre Says
+                </div>
+                <p style={{ margin: 0, fontSize: 15, lineHeight: 1.9, color: "rgba(245,230,216,0.9)", fontStyle: "italic" }}>
+                  {answer}
+                </p>
+                <div style={{ marginTop: 20 }}>
+                  <button onClick={() => { setAnswer(""); setQuestion(""); }} style={ghostBtn}>Ask Another</button>
+                </div>
+              </div>
+            )}
+
+            {/* Suggested questions */}
+            {!answer && !loadingAnswer && (
+              <div>
+                <div style={{ fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(201,169,110,0.5)", marginBottom: 16 }}>
+                  Explore
+                </div>
+                {[
+                  "How do I keep flirtation alive when life is busy?",
+                  "What do men need to feel obsessed with their wives?",
+                  "How do I rebuild my confidence after losing myself?",
+                  "What's the secret to great chemistry long-term?",
+                ].map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => setQuestion(q)}
+                    style={{
+                      display: "block", width: "100%", textAlign: "left",
+                      padding: "14px 18px", marginBottom: 8,
+                      border: "1px solid rgba(245,230,216,0.1)",
+                      borderRadius: 4, background: "rgba(255,255,255,0.02)",
+                      color: "rgba(245,230,216,0.65)", fontSize: 14,
+                      cursor: "pointer", transition: "all 0.2s ease",
+                      fontFamily: "Georgia, serif",
+                    }}
+                    onMouseEnter={(e) => { e.target.style.borderColor = "rgba(201,169,110,0.4)"; e.target.style.color = "#f5e6d8"; }}
+                    onMouseLeave={(e) => { e.target.style.borderColor = "rgba(245,230,216,0.1)"; e.target.style.color = "rgba(245,230,216,0.65)"; }}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.5; transform: scale(0.9); }
+        }
+        * { box-sizing: border-box; }
+        textarea::placeholder { color: rgba(245,230,216,0.25); }
+      `}</style>
+    </div>
+  );
+}
+
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `${r},${g},${b}`;
+}
+
+const primaryBtn = {
+  padding: "12px 28px",
+  background: "linear-gradient(135deg, rgba(201,169,110,0.2), rgba(201,169,110,0.1))",
+  border: "1px solid rgba(201,169,110,0.6)",
+  color: "#c9a96e",
+  fontSize: 12,
+  letterSpacing: "0.2em",
+  textTransform: "uppercase",
+  cursor: "pointer",
+  borderRadius: 2,
+  fontFamily: "Georgia, serif",
+  transition: "all 0.3s ease",
+};
+
+const ghostBtn = {
+  padding: "10px 24px",
+  background: "transparent",
+  border: "1px solid rgba(245,230,216,0.2)",
+  color: "rgba(245,230,216,0.5)",
+  fontSize: 11,
+  letterSpacing: "0.2em",
+  textTransform: "uppercase",
+  cursor: "pointer",
+  borderRadius: 2,
+  fontFamily: "Georgia, serif",
+  transition: "all 0.3s ease",
+};
